@@ -5,22 +5,37 @@ import { HOOK_TIMEOUTS, getTimeout } from "./hook-constants.js";
 import { SettingsDefaultsManager } from "./SettingsDefaultsManager.js";
 import { MARKETPLACE_ROOT } from "./paths.js";
 
-// Named constants for health checks
-// Allow env var override for users on slow systems (e.g., CLAUDE_MEM_HEALTH_TIMEOUT_MS=10000)
-const HEALTH_CHECK_TIMEOUT_MS = (() => {
-  const envVal = process.env.CLAUDE_MEM_HEALTH_TIMEOUT_MS;
+function readTimeoutEnv(
+  envName: string,
+  defaultValue: number,
+  bounds: { min: number; max: number }
+): number {
+  const envVal = process.env[envName];
   if (envVal) {
     const parsed = parseInt(envVal, 10);
-    if (Number.isFinite(parsed) && parsed >= 500 && parsed <= 300000) {
+    if (Number.isFinite(parsed) && parsed >= bounds.min && parsed <= bounds.max) {
       return parsed;
     }
-    // Invalid env var — log once and use default
-    logger.warn('SYSTEM', 'Invalid CLAUDE_MEM_HEALTH_TIMEOUT_MS, using default', {
-      value: envVal, min: 500, max: 300000
+    logger.warn('SYSTEM', `Invalid ${envName}, using default`, {
+      value: envVal, min: bounds.min, max: bounds.max
     });
   }
-  return getTimeout(HOOK_TIMEOUTS.HEALTH_CHECK);
-})();
+  return defaultValue;
+}
+
+// Named constants for health checks.
+// Allow env var override for users on slow systems (e.g., CLAUDE_MEM_HEALTH_TIMEOUT_MS=10000).
+const HEALTH_CHECK_TIMEOUT_MS = readTimeoutEnv(
+  'CLAUDE_MEM_HEALTH_TIMEOUT_MS',
+  getTimeout(HOOK_TIMEOUTS.HEALTH_CHECK),
+  { min: 500, max: 300000 }
+);
+
+const API_REQUEST_TIMEOUT_MS = readTimeoutEnv(
+  'CLAUDE_MEM_API_TIMEOUT_MS',
+  getTimeout(HOOK_TIMEOUTS.API_REQUEST),
+  { min: 500, max: 300000 }
+);
 
 /**
  * Fetch with a timeout using Promise.race instead of AbortSignal.
@@ -108,7 +123,7 @@ export function workerHttpRequest(
   } = {}
 ): Promise<Response> {
   const method = options.method ?? 'GET';
-  const timeoutMs = options.timeoutMs ?? HEALTH_CHECK_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? API_REQUEST_TIMEOUT_MS;
 
   const url = buildWorkerUrl(apiPath);
   const init: RequestInit = { method };
@@ -192,7 +207,7 @@ async function checkWorkerVersion(): Promise<void> {
       logger.debug('SYSTEM', 'Version check', {
         pluginVersion,
         workerVersion,
-        note: 'Mismatch will be auto-restarted by worker-service start command'
+        note: 'Mismatch will be auto-restarted by worker-service.ts start command'
       });
     }
   } catch (error) {
