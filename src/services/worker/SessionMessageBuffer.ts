@@ -2,7 +2,10 @@ import { EventEmitter } from 'events';
 import type { PendingMessage, PendingMessageWithId } from '../worker-types.js';
 import { logger } from '../../utils/logger.js';
 
-const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+// Local inference can have a long time-to-first-token while loading a large
+// model. Keep the generator alive long enough for a five-minute backend
+// request instead of aborting the session after three minutes of queue idle.
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 interface BufferedMessage {
   id: number;
